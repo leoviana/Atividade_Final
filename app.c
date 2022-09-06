@@ -10,8 +10,11 @@
 /* Local includes. */
 #include "console.h"
 
-#define TASK1_PRIORITY 0
-#define TASK2_PRIORITY 0
+#define KEY_ESC     0x1B
+#define KEY_ENTER   0x0A
+
+#define TASK1_PRIORITY 1
+#define TASK2_PRIORITY 1
 #define TASK3_PRIORITY 1
 #define TASK4_PRIORITY 1
 
@@ -24,6 +27,12 @@
 #define clear() printf("\033[H\033[J")
 #define gotoxy(x, y) printf("\033[%d;%dH", (y), (x))
 
+char morseCode[3][6] = { 
+    { '.', '-',   0,   0,   0,   0 }, // A
+    { '-', '.', '.', '.',   0,   0 }, // B
+    { '-', '.', '-', '.',   0,   0 }  // C
+};
+
 typedef struct
 {
     int pos;
@@ -34,17 +43,14 @@ typedef struct
 st_led_param_t green = {
     6,
     GREEN,
-    250};
-st_led_param_t red = {
-    13,
-    RED,
-    100};
+    50};
 
 TaskHandle_t ledTask_hdlr, morseTask_hdlr;
-QueueHandle_t structQueue = NULL;
+QueueHandle_t keyQueue = NULL, charQueue = NULL, morseQueue = NULL;
 
 #include <termios.h>
 
+int stop = 0;
 static void prvTask_getChar(void *pvParameters)
 {
     char key;
@@ -66,74 +72,189 @@ static void prvTask_getChar(void *pvParameters)
 
     tcsetattr(0, TCSANOW, &new_settings);
     /* End of keyboard configuration */
-    for (;;)
+    while(!stop)
     {
-        int stop = 0;
         key = getchar();
         if (key > 0)
         {
-            switch (key)
-            {
-            case 'k':
-            case 'Enter':
-                stop = 1;
-                break;
-            default:
-                if (xQueueSend(structQueue, &key, 0) != pdTRUE)
-                {
-                    //vTaskResume(redTask_hdlr);
-                }
-            }
+            /* Adiciona o key precionada no keyQueue para ser tratada posteriormente */
+            xQueueSend(keyQueue, &key, 0);
         }
-        if (stop)
-        {
-            break;
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+
+
     tcsetattr(0, TCSANOW, &initial_settings);
     ENABLE_CURSOR();
     exit(0);
     vTaskDelete(NULL);
 }
 
-static void prvTask_morseCodification(void *pvParameters)
+static void prvTask_processingData(void *pvParameters)
 {
+    char key;
     while(1)
     {
-        
+        if (xQueueReceive(keyQueue, &key, portMAX_DELAY) == pdPASS){
+
+            /* Trata o botão precionad */
+            switch(key){
+                case KEY_ESC: /* Finaliza o programa */
+                    stop = 1;
+                    break;
+                case KEY_ENTER: /* Executa a task para codificar os dados em morse */
+                    vTaskResume(morseTask_hdlr);
+                    break;
+                case 'A':
+                case 'B':
+                case 'C':
+                case 'D':
+                case 'E':
+                case 'F':
+                case 'G':
+                case 'H':
+                case 'I':
+                case 'J':
+                case 'K':
+                case 'L':
+                case 'M':
+                case 'N':
+                case 'O':
+                case 'P':
+                case 'Q':
+                case 'R':
+                case 'S':
+                case 'T':
+                case 'U':
+                case 'W':
+                case 'X':
+                case 'Y':
+                case 'Z':
+                case ' ':
+                case 'a':
+                case 'b':
+                case 'c':
+                case 'd':
+                case 'e':
+                case 'f':
+                case 'g':
+                case 'h':
+                case 'i':
+                case 'j':
+                case 'k':
+                case 'l':
+                case 'm':
+                case 'n':
+                case 'o':
+                case 'p':
+                case 'q':
+                case 'r':
+                case 's':
+                case 't':
+                case 'u':
+                case 'w':
+                case 'x':
+                case 'y':
+                case 'z':
+                case '0':
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':
+                case '6':
+                case '7':
+                case '8':
+                case '9':
+                    /* Adiciona o charactere para se decodificado */
+                    xQueueSend(charQueue, &key, 0);
+                    break;
+            }
+        }
+    }
+    vTaskDelete(NULL);
+}
+
+static void prvTask_morseCodification(void *pvParameters)
+{
+    char charactere;
+    int index = 0;
+    while(1)
+    {
+        vTaskSuspend(morseTask_hdlr); /* Suspende a task até que a task processingData requisite que um novo codigo seja decodificado */
+
+        while(xQueueReceive(charQueue, &charactere, 0) == pdPASS){
+
+            index = charactere - 'a';
+            xQueueSend(morseQueue, &index, 0);
+        }
     }
 }
 
 static void prvTask_led(void *pvParameters)
 {
     uint8_t status_led = 0;
+    char indexCode, index;
+    int delay;
 
-    // pvParameters contains LED params
-    st_led_param_t *led = (st_led_param_t *)pvParameters;
-    portTickType xLastWakeTime = xTaskGetTickCount();
-    for (;;)
+    while(1)
     {
-        gotoxy(led->pos, 2);
-        printf("%s⬤", led->color);
-        fflush(stdout);
-        vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
+        if(xQueueReceive(morseQueue, &indexCode, 0) == pdPASS){
+            index = 0;
+            while(morseCode[indexCode][index] != 0){
+                gotoxy(0, 4);
+                printf("%c", morseCode[indexCode][index]);
 
-        gotoxy(led->pos, 2);
-        printf("%s ", BLACK);
-        fflush(stdout);
-        vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
+                if(morseCode[indexCode][index] == '.'){
+                    delay = 200;
+                } else {
+                    delay = 800;
+                }
+
+                gotoxy(6, 2);
+                printf("%s⬤", GREEN);
+                fflush(stdout);
+                vTaskDelay(delay / portTICK_PERIOD_MS);
+
+                gotoxy(6, 2);
+                printf("%s ", BLACK);
+                fflush(stdout);
+                vTaskDelay(500 / portTICK_PERIOD_MS);
+
+                index++;
+            }
+        }
+
     }
+
+    // // pvParameters contains LED params
+    // st_led_param_t *led = (st_led_param_t *)pvParameters;
+    // portTickType xLastWakeTime = xTaskGetTickCount();
+    // for (;;)
+    // {
+    //     gotoxy(led->pos, 2);
+    //     printf("%s⬤", led->color);
+    //     fflush(stdout);
+    //     vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
+
+    //     gotoxy(led->pos, 2);
+    //     printf("%s ", BLACK);
+    //     fflush(stdout);
+    //     vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
+    // }
 
     vTaskDelete(NULL);
 }
 
 void app_run(void)
 {
-    structQueue = xQueueCreate(50, // Queue length
+    keyQueue = xQueueCreate(100, // Queue length
+                               1); // Queue item size
+    charQueue = xQueueCreate(100, // Queue length
+                               1); // Queue item size
+    morseQueue = xQueueCreate(100, // Queue length
                                1); // Queue item size
 
-    if (structQueue == NULL)
+    if (keyQueue == NULL)
     {
         printf("Fail on create queue\n");
         exit(1);
@@ -142,14 +263,14 @@ void app_run(void)
     clear();
     DISABLE_CURSOR();
     printf(
-        "╔═════════════════╗\n"
-        "║                 ║\n"
-        "╚═════════════════╝\n");
+        "╔═════════════╗\n"
+        "║             ║\n"
+        "╚═════════════╝\n");
 
     xTaskCreate(prvTask_getChar, "Get_key", configMINIMAL_STACK_SIZE, NULL, TASK1_PRIORITY, NULL); // Leitura do teclado
-    xTaskCreate(prvTask_morseCodification, "LED_green", configMINIMAL_STACK_SIZE, &green, TASK2_PRIORITY, &morseTask_hdlr); // Codificacao frase
-    //xTaskCreate(prvTask_led_red, "LED_red", configMINIMAL_STACK_SIZE, &red, TASK3_PRIORITY, &redTask_hdlr); // Codificacao Morse ?
-    xTaskCreate(prvTask_led, "Get_key", configMINIMAL_STACK_SIZE, NULL, TASK4_PRIORITY, &ledTask_hdlr); // Apresentacao Morse
+    xTaskCreate(prvTask_processingData, "Processing_key", configMINIMAL_STACK_SIZE, NULL, TASK2_PRIORITY, NULL); // Codificacao frase
+    xTaskCreate(prvTask_morseCodification, "Morse", configMINIMAL_STACK_SIZE, NULL, TASK3_PRIORITY, &morseTask_hdlr); // Codificacao Morse
+    xTaskCreate(prvTask_led, "Led", configMINIMAL_STACK_SIZE, NULL, TASK4_PRIORITY, &ledTask_hdlr); // Apresentacao Morse
 
     /* Start the tasks and timer running. */
     vTaskStartScheduler();
