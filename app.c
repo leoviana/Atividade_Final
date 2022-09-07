@@ -27,10 +27,43 @@
 #define clear() printf("\033[H\033[J")
 #define gotoxy(x, y) printf("\033[%d;%dH", (y), (x))
 
-char morseCode[3][6] = { 
+char morseCode[36][6] = { 
     { '.', '-',   0,   0,   0,   0 }, // A
     { '-', '.', '.', '.',   0,   0 }, // B
-    { '-', '.', '-', '.',   0,   0 }  // C
+    { '-', '.', '-', '.',   0,   0 }, // C
+    { '-', '.', '.',   0,   0,   0 }, // D
+    { '.',   0,   0,   0,   0,   0 }, // E
+    { '.', '.', '-', '.',   0,   0 }, // F
+    { '-', '-', '.',   0,   0,   0 }, // G
+    { '.', '.', '.', '.',   0,   0 }, // H
+    { '.', '.',   0,   0,   0,   0 }, // I
+    { '.', '-', '-', '-',   0,   0 }, // J
+    { '-', '.', '-',   0,   0,   0 }, // K
+    { '.', '-', '.', '.',   0,   0 }, // L
+    { '-', '-',   0,   0,   0,   0 }, // M
+    { '-', '.',   0,   0,   0,   0 }, // N
+    { '-', '-', '-',   0,   0,   0 }, // O
+    { '.', '-', '-', '.',   0,   0 }, // P
+    { '-', '-', '.', '_',   0,   0 }, // Q
+    { '.', '-', '.',   0,   0,   0 }, // R
+    { '.', '.', '.',   0,   0,   0 }, // S
+    { '-',   0,   0,   0,   0,   0 }, // T
+    { '.', '.', '-',   0,   0,   0 }, // U
+    { '.', '-', '-',   0,   0,   0 }, // W
+    { '-', '.', '.', '-',   0,   0 }, // X
+    { '-', '.', '-', '-',   0,   0 }, // Y
+    { '-', '-', '.', '.',   0,   0 }, // Z
+    { '-', '-', '-', '-', '-',   0 }, // 0
+    { '.', '-', '-', '-', '-',   0 }, // 1
+    { '.', '.', '-', '-', '-',   0 }, // 2
+    { '.', '.', '.', '-', '-',   0 }, // 3
+    { '.', '.', '.', '.', '-',   0 }, // 4
+    { '.', '.', '.', '.', '.',   0 }, // 5
+    { '-', '.', '.', '.', '.',   0 }, // 6
+    { '-', '-', '.', '.', '.',   0 }, // 7
+    { '-', '-', '-', '.', '.',   0 }, // 8
+    { '-', '-', '-', '-', '.',   0 }, // 9
+    { ' ',   0,   0,   0,   0,   0 }  // espaço
 };
 
 typedef struct
@@ -176,16 +209,33 @@ static void prvTask_processingData(void *pvParameters)
 
 static void prvTask_morseCodification(void *pvParameters)
 {
+
     char charactere;
-    int index = 0;
+    char indexCode, index;
     while(1)
     {
         vTaskSuspend(morseTask_hdlr); /* Suspende a task até que a task processingData requisite que um novo codigo seja decodificado */
 
         while(xQueueReceive(charQueue, &charactere, 0) == pdPASS){
 
-            index = charactere - 'a';
-            xQueueSend(morseQueue, &index, 0);
+            if(charactere >= 'a' && charactere <= 'z'){
+                index = charactere - 'a';
+            } else if(charactere >= 'A' && charactere <= 'Z'){
+                index = charactere - 'A';
+            } else if(charactere >= '0' && charactere <= '9'){
+                index = charactere - '0' + 25;
+            } else {
+                index = 35;
+            }
+            // gotoxy(0, 5);
+            // printf("%c - %u", charactere, index);
+
+            indexCode = 0;
+            while(morseCode[index][indexCode]){
+                xQueueSend(morseQueue, &morseCode[index][indexCode], 0);
+
+                indexCode++;
+            }
         }
     }
 }
@@ -193,54 +243,40 @@ static void prvTask_morseCodification(void *pvParameters)
 static void prvTask_led(void *pvParameters)
 {
     uint8_t status_led = 0;
-    char indexCode, index;
+    char charactere;
     int delay;
 
     while(1)
     {
-        if(xQueueReceive(morseQueue, &indexCode, 0) == pdPASS){
-            index = 0;
-            while(morseCode[indexCode][index] != 0){
-                gotoxy(0, 4);
-                printf("%c", morseCode[indexCode][index]);
+        if(xQueueReceive(morseQueue, &charactere, 0) == pdPASS){
+            // gotoxy(0, 4);
+            // printf("%c", charactere);
 
-                if(morseCode[indexCode][index] == '.'){
+            if(charactere == ' '){
+                gotoxy(5, 2);
+                printf("%s ", BLACK);
+                fflush(stdout);
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+            } else {
+                if(charactere == '.'){
                     delay = 200;
                 } else {
                     delay = 800;
                 }
 
-                gotoxy(6, 2);
+                gotoxy(5, 2);
                 printf("%s⬤", GREEN);
                 fflush(stdout);
                 vTaskDelay(delay / portTICK_PERIOD_MS);
 
-                gotoxy(6, 2);
+                gotoxy(5, 2);
                 printf("%s ", BLACK);
                 fflush(stdout);
                 vTaskDelay(500 / portTICK_PERIOD_MS);
-
-                index++;
             }
         }
 
     }
-
-    // // pvParameters contains LED params
-    // st_led_param_t *led = (st_led_param_t *)pvParameters;
-    // portTickType xLastWakeTime = xTaskGetTickCount();
-    // for (;;)
-    // {
-    //     gotoxy(led->pos, 2);
-    //     printf("%s⬤", led->color);
-    //     fflush(stdout);
-    //     vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
-
-    //     gotoxy(led->pos, 2);
-    //     printf("%s ", BLACK);
-    //     fflush(stdout);
-    //     vTaskDelay(led->period_ms / portTICK_PERIOD_MS);
-    // }
 
     vTaskDelete(NULL);
 }
@@ -263,9 +299,9 @@ void app_run(void)
     clear();
     DISABLE_CURSOR();
     printf(
-        "╔═════════════╗\n"
-        "║             ║\n"
-        "╚═════════════╝\n");
+        "╔════════╗\n"
+        "║        ║\n"
+        "╚════════╝\n");
 
     xTaskCreate(prvTask_getChar, "Get_key", configMINIMAL_STACK_SIZE, NULL, TASK1_PRIORITY, NULL); // Leitura do teclado
     xTaskCreate(prvTask_processingData, "Processing_key", configMINIMAL_STACK_SIZE, NULL, TASK2_PRIORITY, NULL); // Codificacao frase
