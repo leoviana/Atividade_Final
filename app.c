@@ -259,9 +259,9 @@ static void prvTask_led(void *pvParameters)
                 vTaskDelay(1000 / portTICK_PERIOD_MS);
             } else {
                 if(charactere == '.'){
-                    delay = 200;
+                    delay = 150;
                 } else {
-                    delay = 800;
+                    delay = 400;
                 }
 
                 gotoxy(5, 2);
@@ -272,7 +272,7 @@ static void prvTask_led(void *pvParameters)
                 gotoxy(5, 2);
                 printf("%s ", BLACK);
                 fflush(stdout);
-                vTaskDelay(500 / portTICK_PERIOD_MS);
+                vTaskDelay(200 / portTICK_PERIOD_MS);
             }
         }
 
